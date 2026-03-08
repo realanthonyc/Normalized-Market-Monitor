@@ -1,0 +1,68 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © realanthonyc https://www.tradingview.com/u/realanthonyc
+
+//@version=6
+// ----------------------------------------------------------------------
+//  Normalized Market Monitor (NMM)
+//  On GitHub: https://github.com/realanthonyc/Normalized-Market-Monitor
+//  v1.0.0
+// ----------------------------------------------------------------------
+indicator(title="Normalized Market Monitor", shorttitle="NMM", overlay=false)
+
+// === Main Symbol (e.g. ES futures) ===
+sym_main = input.symbol("ES1!", title="Main Symbol", tooltip="Recommended: ES1! or NQ1!")
+
+// === Secondary Symbol (e.g. BTCUSD) ===
+sym_sec = input.symbol("BTCUSD", title="Secondary Symbol")
+
+// Lookback period for normalization
+length = input.int(14, title="Lookback Length", minval=1)
+
+// === Data for main symbol ===
+close_main = request.security(sym_main, timeframe.period, close)
+high_main  = request.security(sym_main, timeframe.period, ta.highest(high, length))
+low_main   = request.security(sym_main, timeframe.period, ta.lowest(low, length))
+norm_main  = (close_main - low_main) / (high_main - low_main) * 200 - 100
+
+// === Data for secondary symbol ===
+close_sec = request.security(sym_sec, timeframe.period, close)
+high_sec  = request.security(sym_sec, timeframe.period, ta.highest(high, length))
+low_sec   = request.security(sym_sec, timeframe.period, ta.lowest(low, length))
+norm_sec  = (close_sec - low_sec) / (high_sec - low_sec) * 200 - 100
+
+// === Time range check (adjusted to approximate ET for US stock market sessions) ===
+in_time_range(start_hour, start_min, end_hour, end_min) =>
+    offset = syminfo.timezone == "America/Chicago" ? 1 : 0
+    h_et = hour + offset
+    h_et := h_et >= 24 ? h_et - 24 : h_et
+    m = minute
+    start_time = start_hour * 60 + start_min
+    end_time   = end_hour   * 60 + end_min
+    current_time = h_et * 60 + m
+    if start_time <= end_time
+        current_time >= start_time and current_time < end_time
+    else
+        current_time >= start_time or current_time < end_time
+
+// US stock market sessions in ET (exclude weekends from pre/after)
+is_pre   = in_time_range(4, 0, 9, 30) and not (dayofweek == dayofweek.saturday or dayofweek == dayofweek.sunday)
+is_after = in_time_range(16, 0, 20, 0) and not (dayofweek == dayofweek.saturday or dayofweek == dayofweek.sunday)
+is_off   = in_time_range(20, 0, 4, 0) or dayofweek == dayofweek.saturday or dayofweek == dayofweek.sunday
+
+// Plot lines only when data is available
+plot(not na(close_sec) ? norm_sec : na, title="Normalized Secondary", color=color.orange, linewidth=1, style=plot.style_linebr)
+plot(not na(close_main) ? norm_main : na, title="Normalized Main", color=color.blue, linewidth=2, style=plot.style_linebr)
+
+// Reference lines
+hline(100,  "Upper Bound", color=color.gray, linestyle=hline.style_dashed, editable=false)
+hline(0,    "Zero Line",   color=color.gray, linestyle=hline.style_dashed, editable=false)
+hline(-100, "Lower Bound", color=color.gray, linestyle=hline.style_dashed, editable=false)
+
+// Add spacings
+hline(115,  "Upper Spacing", color=color.rgb(0, 0, 0, 100), editable=false)
+hline(-115, "Lower Spacing", color=color.rgb(0, 0, 0, 100), editable=false)
+
+// Background colors (following US stock market sessions, off-market last to override)
+bgcolor(is_pre   ? color.new(color.yellow, 90) : na, title="Pre-Market")
+bgcolor(is_after ? color.new(color.purple, 95) : na, title="After-Hours")
+bgcolor(is_off   ? color.new(color.blue,   88) : na, title="Off-Market")
